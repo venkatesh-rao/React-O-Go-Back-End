@@ -9,33 +9,18 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-type (
-	Book struct {
-		Isbn   string `json: "isbn"`
-		Title  string `json: "title"`
-		Author string `json: "author"`
-		Price  string `json: "price"`
-	}
+type Book struct {
+	Isbn   string `json: "isbn"`
+	Title  string `json: "title"`
+	Author string `json: "author"`
+	Price  string `json: "price"`
+}
 
-	User struct {
-		mobilenumber string `json: "mobilenumber"`
-		username 	 string `json: "username"`
-		userid 		 string `json: "userid"`
-		password 	 string `json: "password"`	
-	}
-)
 
 func hello(c echo.Context) error {
 	return c.Redirect(http.StatusOK, "Welcome to the Store!")
 }
 
-func signIn(c echo.Context) error {
-	return c.String(http.StatusOK, "Sign In...")
-}
-
-func signUp(c echo.Context) error {
-	return c.String(http.StatusOK, "Sign Up..")
-}
 
 func allBooks(s *mgo.Session) echo.HandlerFunc {
     return func(c echo.Context) (err error) {
@@ -136,7 +121,7 @@ func main() {
 	// wth GET, PUT, POST or DELETE method.
 
 	// e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-	// 	AllowOrigins: []string{"https://labstack.com", "https://labstack.net"},
+	// 	AllowOrigins: []string{"https://123.com", "https://123.net"},
 	// 	AllowMethods: []string{echo.GET, echo.PUT, echo.POST, echo.DELETE},
 	// }))
 
@@ -153,6 +138,5 @@ func main() {
 	e.PUT("/books/:isbn", updateBook(session))
 	e.DELETE("/books/:isbn", deleteBookByNumber(session))
 	e.GET("/login", signIn)
-	e.GET("/register", signUp)
 	e.Logger.Fatal(e.Start(":1234"))
 }

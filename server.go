@@ -2,7 +2,9 @@ package main
 
 import (
 	"net/http"
+	"time"
 	
+	"github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"gopkg.in/mgo.v2"
@@ -18,9 +20,35 @@ type Book struct {
 
 
 func hello(c echo.Context) error {
-	return c.Redirect(http.StatusOK, "Welcome to the Store!")
+	return c.String(http.StatusOK, "Welcome to the Store!")
 }
 
+func signIn(c echo.Context) error {
+	username := c.FormValue("username")
+	password := c.FormValue("password")
+
+	if username == "jon" && password == "hello" {
+		// Create token
+		token := jwt.New(jwt.SigningMethodHS256)
+
+		// Set claims
+		claims := token.Claims.(jwt.MapClaims)
+		claims["name"] = "jon snow"
+		claims["admin"] = true
+		claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+
+		// Generate encoded token and send it as response
+		t, err := token.SignedString([]byte("secret"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]string {
+			"token": t,
+		})
+	}
+
+	return echo.ErrUnauthorized
+}
 
 func allBooks(s *mgo.Session) echo.HandlerFunc {
     return func(c echo.Context) (err error) {
@@ -132,11 +160,16 @@ func main() {
 	defer session.Close()
 
 	e.GET("/", hello)
-	e.GET("/books", allBooks(session))
-	e.POST("/books", addBook(session))
-	e.GET("/books/:isbn", findBookByNumber(session))
-	e.PUT("/books/:isbn", updateBook(session))
-	e.DELETE("/books/:isbn", deleteBookByNumber(session))
-	e.GET("/login", signIn)
+	e.POST("/login", signIn)
+
+	r := e.Group("/books")
+	r.Use(middleware.JWT([]byte("secret")))
+	
+	r.GET("", allBooks(session))
+	r.GET("/:isbn", findBookByNumber(session))
+	r.POST("", addBook(session))
+	r.PUT("/:isbn", updateBook(session))
+	r.DELETE("/:isbn", deleteBookByNumber(session))
+	
 	e.Logger.Fatal(e.Start(":1234"))
 }

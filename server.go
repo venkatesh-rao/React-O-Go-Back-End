@@ -3,55 +3,97 @@ package main
 import (
 	"net/http"
 	"time"
-	
-	"github.com/dgrijalva/jwt-go"
+
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
-type Book struct {
-	Isbn   string `json: "isbn"`
-	Title  string `json: "title"`
-	Author string `json: "author"`
-	Price  string `json: "price"`
-}
-
-
-func hello(c echo.Context) error {
-	return c.String(http.StatusOK, "Welcome to the Store!")
-}
-
-func signIn(c echo.Context) error {
-	username := c.FormValue("username")
-	password := c.FormValue("password")
-
-	if username == "jon" && password == "hello" {
-		// Create token
-		token := jwt.New(jwt.SigningMethodHS256)
-
-		// Set claims
-		claims := token.Claims.(jwt.MapClaims)
-		claims["name"] = "jon snow"
-		claims["admin"] = true
-		claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
-
-		// Generate encoded token and send it as response
-		t, err := token.SignedString([]byte("secret"))
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, map[string]string {
-			"token": t,
-		})
+type (
+	// Book represent the struct to a book
+	Book struct {
+		Isbn   string `json: "isbn"`
+		Title  string `json: "title"`
+		Author string `json: "author"`
+		Price  string `json: "price"`
 	}
 
-	return echo.ErrUnauthorized
+	// User represent the struct of a user
+	User struct {
+		Username string `json: "username"`
+		Password string `json: "password"`
+	}
+)
+
+type users = map[string]string
+
+// HashPassword hashes the user given password
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	return string(bytes), err
+}
+
+// CheckPasswordWithHash checks the user given password with the existing hashpassword in the db
+func CheckPasswordWithHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
+func hello(c echo.Context) error {
+	return c.String(http.StatusOK, "Welcome Home!")
+}
+
+func signIn(s *mgo.Session) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		session := s.Copy()
+		defer session.Close()
+
+		user := new(User)
+
+		if err := c.Bind(&user); err != nil {
+			return err
+		}
+
+		username := user.Username
+		password := user.Password
+
+		check := new(User)
+
+		if err := session.DB("store").C("users").Find(bson.M{"username": username}).One(&check); err != nil {
+			return echo.ErrUnauthorized
+		}
+
+		if username == check.Username && CheckPasswordWithHash(password, check.Password) {
+
+			// Create token
+			token := jwt.New(jwt.SigningMethodHS256)
+
+			// // Set claims
+			claims := token.Claims.(jwt.MapClaims)
+			claims["name"] = "jon snow"
+			claims["admin"] = true
+			claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+
+			// Generate encoded token and send it as response
+			t, err := token.SignedString([]byte("secret"))
+			if err != nil {
+				return err
+			}
+			return c.JSON(http.StatusOK, map[string]string{
+				"token": t,
+			})
+
+		}
+
+		return echo.ErrUnauthorized
+	}
 }
 
 func allBooks(s *mgo.Session) echo.HandlerFunc {
-    return func(c echo.Context) (err error) {
+	return func(c echo.Context) (err error) {
 		session := s.Copy()
 		defer session.Close()
 
@@ -71,8 +113,8 @@ func findBookByNumber(s *mgo.Session) echo.HandlerFunc {
 
 		isbn := c.Param("isbn")
 		var book []Book
-		
-		if err := session.DB("store").C("books").Find(bson.M{"isbn": isbn}).All(&book); err !=nil {
+
+		if err := session.DB("store").C("books").Find(bson.M{"isbn": isbn}).All(&book); err != nil {
 			return err
 		}
 
@@ -87,7 +129,7 @@ func deleteBookByNumber(s *mgo.Session) echo.HandlerFunc {
 
 		isbn := c.Param("isbn")
 
-		if err := session.DB("store").C("books").Remove(bson.M{"isbn": isbn}); err !=nil {
+		if err := session.DB("store").C("books").Remove(bson.M{"isbn": isbn}); err != nil {
 			return err
 		}
 
@@ -102,12 +144,12 @@ func addBook(s *mgo.Session) echo.HandlerFunc {
 		defer session.Close()
 
 		book := new(Book)
-		
+
 		if err := c.Bind(&book); err != nil {
 			return err
 		}
 
-		if err := session.DB("store").C("books").Insert(book); err !=nil {
+		if err := session.DB("store").C("books").Insert(book); err != nil {
 			return err
 		}
 
@@ -123,12 +165,12 @@ func updateBook(s *mgo.Session) echo.HandlerFunc {
 
 		book := new(Book)
 		isbn := c.Param("isbn")
-		
+
 		if err := c.Bind(&book); err != nil {
 			return err
 		}
 
-		if err := session.DB("store").C("books").Update(bson.M{"isbn": isbn}, &book); err !=nil {
+		if err := session.DB("store").C("books").Update(bson.M{"isbn": isbn}, &book); err != nil {
 			return err
 		}
 
@@ -160,16 +202,16 @@ func main() {
 	defer session.Close()
 
 	e.GET("/", hello)
-	e.POST("/login", signIn)
+	e.POST("/login", signIn(session))
 
 	r := e.Group("/books")
 	r.Use(middleware.JWT([]byte("secret")))
-	
+
 	r.GET("", allBooks(session))
 	r.GET("/:isbn", findBookByNumber(session))
 	r.POST("", addBook(session))
 	r.PUT("/:isbn", updateBook(session))
 	r.DELETE("/:isbn", deleteBookByNumber(session))
-	
+
 	e.Logger.Fatal(e.Start(":1234"))
 }
